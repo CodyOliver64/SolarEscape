@@ -1,0 +1,1665 @@
+00001000 Starting Address
+Assembler used: EASy68K Editor/Assembler v5.16.01
+Created On: 10/20/2021 10:34:19 AM
+
+00000000                             1  *-----------------------------------------------------------
+00000000                             2  * Title      :  Solar Escape
+00000000                             3  * Written by :  Cody Oliver
+00000000                             4  * Date       :  10/18/2021
+00000000                             5  * Description:  Welcome to the game, Solar Escape!
+00000000                             6  
+00000000                             7  *               This file contains the main game loops as well as functions that handle player movement,
+00000000                             8  *               screen output and game setup.
+00000000                             9  
+00000000                            10  *               This main file will include four other files that handle specific functioanlity within the
+00000000                            11  *               game loop (descriptions included in those files). 
+00000000                            12  *               Included in the zipped file is the source code required as well as the art assets.
+00000000                            13  *               ---------------------------------------------------------------------------------------------
+00000000                            14                     
+00000000                            15  *               Run the SolarEscape main file to play. 
+00000000                            16  *               Use the SPACE key to thrust. 
+00000000                            17  *-----------------------------------------------------------
+00000000                            18              
+00000000                            19  
+00001000                            20  START   ORG     $1000
+00001000                            21  
+00001000                            22  
+00001000                            23  ALL_REG         REG     D0-D7/A0-A6
+00001000                            24  
+00001000                            25  **************Trap Codes****************************
+00001000  =00000050                 26  SET_PEN_COLOR_COMMAND           equ     80
+00001000  =00000015                 27  SET_TEXT_COLOR_COMMAND          equ     21
+00001000  =00000051                 28  SET_FILL_COLOR_COMMAND          equ     81
+00001000  =00000057                 29  DRAW_SQUARE_COMMAND             equ     87
+00001000  =00000013                 30  INPUT_COMMAND                   equ     19
+00001000  =0000005C                 31  DRAWING_MODE_COMMAND            equ     92
+00001000  =00000011                 32  DOUBLE_BUFFERED_COMMAND         equ     17
+00001000  =0000005E                 33  REPAINT_SCREEN_COMMAND          equ     94
+00001000  =00000021                 34  SET_OUTPUT_RESOLUTION_COMMAND   equ     33
+00001000  =0000005F                 35  DISPLAY_TEXT_COMMAND            equ     95
+00001000  =00000049                 36  PLAY_SINGLE_SOUND_COMMAND       equ     73
+00001000                            37  
+00001000                            38  
+00001000                            39  **************Screen Values****************************
+00001000  =00000384                 40  OUTPUT_WIDTH                    equ     900
+00001000  =00000352                 41  OUTPUT_FULL_HEIGHT              equ     850
+00001000  =00000064                 42  PLAY_AREA_TOP                   equ     100
+00001000  =000002F8                 43  PLAY_AREA_BOTTOM                equ     760
+00001000  =00000000                 44  PLAY_AREA_LEFT                  equ     0
+00001000  =00000384                 45  PLAY_AREA_RIGHT                 equ     900
+00001000                            46  
+00001000  =00FFFFFF                 47  WHITE                           equ $00FFFFFF
+00001000  =FFFFFFFF                 48  BLACK                           equ $FFFFFFFF
+00001000  =000000FF                 49  RED                             equ $FF
+00001000  =0000FF00                 50  GREEN                           equ $00FF00
+00001000                            51  
+00001000                            52  **************Player Values****************************
+00001000  =00000020                 53  JUMP_KEY                        equ $20
+00001000  =00000046                 54  RESET_KEY                       equ 'F'
+00001000  =FFFFFFEC                 55  VELOCITY_AFTER_JUMP             equ -20     *two fractional bit represesentation of -5.25
+00001000  =00000014                 56  SHIP_WIDTH                      equ 20
+00001000  =00000014                 57  SHIP_HEIGHT                     equ 20
+00001000  =0000012C                 58  SHIP_START_Y_POSITION           equ 300
+00001000  =00000064                 59  SHIP_X_POSITION                 equ 100
+00001000  =0000001E                 60  SHIP_START_VELOCITY             equ 30      *two fractional bit represesentation of 7.5
+00001000                            61  
+00001000  =00000064                 62  SHIP_X_POSITION                 equ 100
+00001000  =0000000A                 63  GRAVITY                         equ 10      *two fractional bit represesentation of 2.5
+00001000                            64  
+00001000                            65  
+00001000                            66  
+00001000                            67  gameSetup:              
+00001000  4EB9 000010F6             68          jsr     setScreenParameters
+00001006  4EB9 00001132             69          jsr     initTitleScreen
+0000100C  4EB9 0000116E             70          jsr     initPlayerStart
+00001012  4EB9 000011A8             71          jsr     initRandomSeed
+00001018  4EB9 000016D8             72          jsr     updateSevenSegment *display initial score
+0000101E                            73  
+0000101E                            74  
+0000101E                            75  
+0000101E                            76  
+0000101E                            77  *D2 = Player Y Pos, D6 = Acceleration Due to Gravity, D7 = Velocity, A6 = currentPlayerY
+0000101E                            78  gameLoop:                         
+0000101E  4EB9 000010C2             79          jsr     clearPlayArea  
+00001024  4EB9 00001532             80          jsr     detectCollision
+0000102A  4EB9 00001640             81          jsr     detectPlayerOutOfBounds
+00001030  4EB9 00001056             82          jsr     applyPlayerVelocity
+00001036  4EB9 00001336             83          jsr     updateObjects
+0000103C  4EB9 0000106C             84          jsr     getUserInput
+00001042  4EB9 00001800             85          jsr     reprintPlayer
+00001048  4EB9 000012EE             86          jsr     drawObjects
+0000104E  4EB9 000010EE             87          jsr     switchBuffer
+00001054                            88          
+00001054  60C8                      89          bra     gameLoop
+00001056                            90          
+00001056                            91  
+00001056                            92  *-----------------------------------------------------------
+00001056                            93  *                   GRAVITY/MOVEMENT
+00001056                            94  *-----------------------------------------------------------
+00001056                            95  applyPlayerVelocity
+00001056                            96         
+00001056  DE86                      97          add.l   d6,d7                   *update velocity based on gravity
+00001058  23C7 00001296             98          move.l  d7,cummulativeVelocity  *FIXED POINT MATH
+0000105E  E487                      99          asr.l   #2,d7
+00001060  D487                     100          add.l   d7,d2                   *update player position based on current velocity
+00001062  2C82                     101          move.l  d2,(a6)
+00001064  2E39 00001296            102          move.l  cummulativeVelocity,d7
+0000106A                           103          
+0000106A  4E75                     104          rts
+0000106C                           105  getUserInput
+0000106C  7220                     106          move.l  #JUMP_KEY,d1
+0000106E  103C 0013                107          move.b  #INPUT_COMMAND,d0
+00001072  4E4F                     108          trap    #15
+00001074  0281 000000FF            109          andi.l  #$FF,d1
+0000107A  6600 0012                110          bne     handleJump
+0000107E                           111          
+0000107E  7200                     112          move.l  #0,d1       *reset jump flag when jump key is released
+00001080  4E4F                     113          trap    #15
+00001082  0281 00000020            114          andi.l  #JUMP_KEY,d1
+00001088  6600 002C                115          bne     resetFlag
+0000108C                           116          
+0000108C  4E75                     117          rts
+0000108E                           118  handleJump:
+0000108E  0CB9 00000001 0000129A   119          cmp.l   #1,jumpFlag
+00001098  6B00 001A                120          bmi     noJump
+0000109C                           121          
+0000109C  7EB0                     122          move.l  #VELOCITY_AFTER_JUMP<<2,d7   *FIXED POINT MATH (set jump velocity)
+0000109E  23FC FFFFFFB0 00001296   123          move.l  #VELOCITY_AFTER_JUMP<<2,cummulativeVelocity
+000010A8                           124          
+000010A8  23FC 00000000 0000129A   125          move.l  #0,jumpFlag     *limit jump until key is released
+000010B2  4E75                     126          rts
+000010B4                           127  noJump:
+000010B4  4E75                     128          rts
+000010B6                           129  resetFlag:
+000010B6  23FC 00000001 0000129A   130          move.l  #1,jumpFlag
+000010C0  4E75                     131          rts 
+000010C2                           132  
+000010C2                           133  *-----------------------------------------------------------
+000010C2                           134  *                   SCREEN/SETUP 
+000010C2                           135  *-----------------------------------------------------------        
+000010C2                           136  clearPlayArea
+000010C2  48E7 FFFE                137          movem.l ALL_REG,-(sp)
+000010C6                           138          
+000010C6  72FF                     139          move.l  #BLACK,d1 
+000010C8  103C 0050                140          move.b  #SET_PEN_COLOR_COMMAND,d0
+000010CC  4E4F                     141          trap    #15
+000010CE  103C 0051                142          move.b  #SET_FILL_COLOR_COMMAND,d0
+000010D2  4E4F                     143          trap    #15
+000010D4  7200                     144          move.l  #PLAY_AREA_LEFT,d1
+000010D6  7464                     145          move.l  #PLAY_AREA_TOP,d2
+000010D8  263C 00000384            146          move.l  #PLAY_AREA_RIGHT,d3
+000010DE  283C 000002F8            147          move.l  #PLAY_AREA_BOTTOM,d4
+000010E4  7057                     148          move.l  #DRAW_SQUARE_COMMAND,d0
+000010E6  4E4F                     149          trap    #15
+000010E8                           150  
+000010E8  4CDF 7FFF                151          movem.l (sp)+,ALL_REG
+000010EC  4E75                     152          rts
+000010EE                           153          
+000010EE                           154  switchBuffer
+000010EE  103C 005E                155          move.b  #REPAINT_SCREEN_COMMAND,d0
+000010F2  4E4F                     156          TRAP    #15
+000010F4  4E75                     157          rts
+000010F6                           158          
+000010F6                           159  setScreenParameters
+000010F6  103C 005C                160          move.b  #DRAWING_MODE_COMMAND,d0 *set double buffered mode
+000010FA  123C 0011                161          move.b  #DOUBLE_BUFFERED_COMMAND,d1
+000010FE  4E4F                     162          trap    #15
+00001100                           163          
+00001100  103C 0021                164          move.b  #SET_OUTPUT_RESOLUTION_COMMAND,d0 *set output window resolution
+00001104  223C 00000384            165          move.l  #OUTPUT_WIDTH,d1
+0000110A  4841                     166          swap.w  d1                             
+0000110C  323C 0352                167          move.w  #OUTPUT_FULL_HEIGHT,d1
+00001110  4E4F                     168          TRAP    #15 
+00001112                           169          
+00001112  4E75                     170          rts
+00001114                           171          
+00001114                           172  initPlayArea
+00001114  4EB8 10C2                173          jsr     clearPlayArea
+00001118  4EB9 00001180            174          jsr     displayLoadMessage
+0000111E                           175  
+0000111E  41F9 00001AF8            176          lea     borderImage,a0
+00001124  4EB9 0000192C            177          jsr     printBackground *print initial screen
+0000112A  4EB9 00001990            178          jsr     printInitLives
+00001130                           179          
+00001130  4E75                     180          rts
+00001132                           181          
+00001132                           182  initTitleScreen
+00001132  4EB9 00001180            183          jsr     displayLoadMessage
+00001138                           184  
+00001138  41F9 002FC270            185          lea     titleImage,a0
+0000113E  4EB9 0000192C            186          jsr     printBackground
+00001144                           187          
+00001144  4EB8 10EE                188          jsr     switchBuffer
+00001148                           189          
+00001148  43F9 000016BC            190          lea     loopMusic,a1 *loop background music
+0000114E  704A                     191          moveq   #74,d0
+00001150  7200                     192          move.l  #0,d1
+00001152  4E4F                     193          trap    #15
+00001154  704D                     194          moveq   #77,d0
+00001156  7401                     195          move.l  #1,d2
+00001158  4E4F                     196          trap    #15
+0000115A                           197  waitForStartLoop:
+0000115A  7220                     198          move.l  #JUMP_KEY,d1
+0000115C  103C 0013                199          move.b  #INPUT_COMMAND,d0
+00001160  4E4F                     200          trap    #15
+00001162  0281 000000FF            201          andi.l  #$FF,d1
+00001168  67F0                     202          beq     waitForStartLoop 
+0000116A  4EB8 1114                203          jsr     initPlayArea
+0000116E                           204                
+0000116E                           205          
+0000116E                           206  initPlayerStart
+0000116E  243C 0000012C            207          move.l  #SHIP_START_Y_POSITION,d2 *set Y position
+00001174  4DF9 00001292            208          lea     currentPlayerY,a6        
+0000117A  7C0A                     209          move.l  #GRAVITY,d6
+0000117C  7E1E                     210          move.l  #SHIP_START_VELOCITY,d7
+0000117E                           211          
+0000117E  4E75                     212          rts
+00001180                           213  
+00001180                           214  displayLoadMessage
+00001180  223C 00FFFFFF            215          move.l  #WHITE,d1 
+00001186  4282                     216          clr.l   d2 
+00001188  103C 0015                217          move.b  #SET_TEXT_COLOR_COMMAND,d0
+0000118C  4E4F                     218          trap    #15
+0000118E  705F                     219          move.l  #DISPLAY_TEXT_COMMAND,d0
+00001190  223C 00000190            220          move.l  #400,d1
+00001196  243C 0000015E            221          move.l  #350,d2
+0000119C  43F9 000012DE            222          lea     stringLoading,a1     
+000011A2  4E4F                     223          trap    #15
+000011A4  4EB8 10EE                224          jsr     switchBuffer
+000011A8                           225          
+000011A8                           226  initRandomSeed
+000011A8  41F9 0000152E            227          lea     RANDOMVAL,a0    *set time based seed
+000011AE  7008                     228          move.l  #8,d0
+000011B0  4E4F                     229          trap    #15
+000011B2  0081 75000000            230          ori.l   #$75000000,d1   *fill upper empty bit
+000011B8  2081                     231          move.l  d1,(a0)
+000011BA                           232          
+000011BA  4E75                     233          rts
+000011BC                           234         
+000011BC                           235  gameOver        
+000011BC  4EB8 10C2                236          jsr     clearPlayArea
+000011C0                           237          
+000011C0  223C 000000FF            238          move.l  #RED,d1    *display you lose message
+000011C6  4282                     239          clr.l   d2 
+000011C8  103C 0015                240          move.b  #SET_TEXT_COLOR_COMMAND,d0
+000011CC  4E4F                     241          trap    #15
+000011CE  705F                     242          move.l  #DISPLAY_TEXT_COMMAND,d0
+000011D0  223C 00000131            243          move.l  #305,d1
+000011D6  243C 0000015E            244          move.l  #350,d2
+000011DC  43F9 0000129E            245          lea     stringYouLose,a1     
+000011E2  4E4F                     246          trap    #15
+000011E4                           247  
+000011E4  4EB8 10EE                248          jsr     switchBuffer
+000011E8  4EB9 00001220            249          jsr     userResetGame
+000011EE                           250          
+000011EE                           251  youWin      
+000011EE  4EB8 10C2                252          jsr     clearPlayArea
+000011F2                           253          
+000011F2  223C 0000FF00            254          move.l  #GREEN,d1    *display you win message
+000011F8  4282                     255          clr.l   d2 
+000011FA  103C 0015                256          move.b  #SET_TEXT_COLOR_COMMAND,d0
+000011FE  4E4F                     257          trap    #15
+00001200  705F                     258          move.l  #DISPLAY_TEXT_COMMAND,d0
+00001202  223C 00000131            259          move.l  #305,d1
+00001208  243C 0000015E            260          move.l  #350,d2
+0000120E  43F9 000012BE            261          lea     stringYouWin,a1     
+00001214  4E4F                     262          trap    #15
+00001216                           263  
+00001216  4EB8 10EE                264          jsr     switchBuffer
+0000121A  4EB9 00001220            265          jsr     userResetGame
+00001220                           266          
+00001220                           267  userResetGame
+00001220  7246                     268          move.l  #RESET_KEY,d1
+00001222  103C 0013                269          move.b  #INPUT_COMMAND,d0
+00001226  4E4F                     270          trap    #15
+00001228  0281 000000FF            271          andi.l  #$FF,d1
+0000122E  6600 0004                272          bne     resetGameStats
+00001232  60EC                     273          bra     userResetGame
+00001234                           274          
+00001234                           275  resetGameStats:
+00001234  23FC 00000000 000016C8   276          move.l  #0,currentScore1    *reset score
+0000123E  23FC 00000000 000016CC   277          move.l  #0,currentScore2
+00001248  23FC 00000000 000016D0   278          move.l  #0,rawScore
+00001252                           279          
+00001252  23FC 00000005 00001522   280          move.l  #5,speedOffset      *reset speed range
+0000125C  23FC 00000000 00001526   281          move.l  #0,speedInterval
+00001266                           282          
+00001266  23FC 00000298 005E73E4   283          move.l  #664,heartCropX     *reset lives
+00001270  23FC 00000003 000016D4   284          move.l  #3,currentLives
+0000127A                           285          
+0000127A  4EB9 000013C8            286          jsr     resetObjectStats    *reset all enemies/objects
+00001280                           287          
+00001280  4EB8 1114                288          jsr     initPlayArea        *reset screen
+00001284  4EB8 116E                289          jsr     initPlayerStart
+00001288                           290          
+00001288  4EB9 000016D8            291          jsr     updateSevenSegment
+0000128E                           292          
+0000128E  4EB8 101E                293          jsr     gameLoop
+00001292                           294  
+00001292                           295  
+00001292                           296  
+00001292                           297  currentPlayerY      ds.l 1
+00001296                           298  cummulativeVelocity ds.l 1
+0000129A= 00000001                 299  jumpFlag            dc.l 1
+0000129E                           300  
+0000129E= 59 6F 75 20 4C 6F ...    301  stringYouLose       dc.b    'You Lose! Press F To Try Again!',0
+000012BE= 59 6F 75 20 57 49 ...    302  stringYouWin        dc.b    'You WIN! Press F To Play Again!',0
+000012DE                           303  
+000012DE= 4C 6F 61 64 69 6E ...    304  stringLoading       dc.b    'Loading...',0
+000012E9                           305  
+000012EA  FFFF FFFF                306      SIMHALT
+000012EE                           307  
+000012EE                           308  
+000012EE                           309  
+000012EE                           310  getFiles:  
+000012EE                           311      INCLUDE SpawnObject.X68
+000012EE                           312  
+000012EE  =00000014                313  OBJ_WIDTH      equ 20
+000012EE  =00000014                314  OBJ_HEIGHT     equ 20
+000012EE                           315  
+000012EE  =00000352                316  OBJ_START_X    equ 850
+000012EE  =00000000                317  OBJ_STOP_X     equ 0
+000012EE  =0000000C                318  MAX_SPEED      equ 12
+000012EE  =0000024E                319  MAX_BOTTOM_Y   equ 590
+000012EE  =0000006E                320  HEIGHT_OFFSET  equ 110
+000012EE                           321  
+000012EE                           322  
+000012EE                           323  drawObjects              
+000012EE  48E7 FFFE                324          movem.l ALL_REG,-(sp)
+000012F2                           325          
+000012F2  43F9 000014DA            326          lea     leftXTable,a1       *set object properties
+000012F8  45F9 000014C2            327          lea     topYTable,a2
+000012FE  47F9 0000150A            328          lea     objActiveTable,a3
+00001304  41F9 002EEA88            329          lea     coinImage,a0
+0000130A                           330          
+0000130A  7E02                     331          move.l  #2,d7               *set loop counters to coins-1 & enemies
+0000130C  7A03                     332          move.l  #3,d5
+0000130E                           333          
+0000130E                           334  drawObjectLoop:
+0000130E  2219                     335          move.l  (a1)+,d1 
+00001310  241A                     336          move.l  (a2)+,d2
+00001312  2C1B                     337          move.l  (a3)+,d6
+00001314                           338   
+00001314  0C46 0000                339          cmpi    #0,d6               *skip draw if object is inactive
+00001318  6700 0008                340          beq     skipDraw
+0000131C                           341  
+0000131C  4EB9 00001866            342          jsr     reprintObject      
+00001322                           343  skipDraw:
+00001322  5347                     344          subi    #1,d7               *check loop counter to draw all coins
+00001324  6AE8                     345          bpl     drawObjectLoop
+00001326                           346          
+00001326  41F9 002EF7E0            347          lea     enemyImage,a0       *reset loop counter for enemies and switch bmp file
+0000132C  5345                     348          subi    #1,d5               *check loop counter to draw all enemies
+0000132E  6ADE                     349          bpl     drawObjectLoop
+00001330                           350          
+00001330  4CDF 7FFF                351          movem.l (sp)+,ALL_REG
+00001334  4E75                     352          rts
+00001336                           353  
+00001336                           354  
+00001336                           355  
+00001336                           356  updateObjects
+00001336                           357        
+00001336  48E7 FFFE                358          movem.l ALL_REG,-(sp)
+0000133A                           359           
+0000133A  43F9 000014DA            360          lea     leftXTable,a1       *set object properties
+00001340  45F9 000014C2            361          lea     topYTable,a2
+00001346  47F9 0000150A            362          lea     objActiveTable,a3
+0000134C  49F9 000014F2            363          lea     objSpeedTable,a4
+00001352  7E06                     364          move.l  #6,d7               *set loop counter
+00001354                           365  
+00001354                           366  updateObjectLoop:
+00001354  2A14                     367          move.l  (a4),d5             *update X position and check if reset is needed
+00001356  9B91                     368          sub.l   d5,(a1)
+00001358  6A00 0008                369          bpl     skipReset
+0000135C  4EB9 00001374            370          jsr     resetObject
+00001362                           371       
+00001362                           372  skipReset:
+00001362  5889                     373          add.l   #4,a1               *increment table pointers (add 4 for 4 bytes in a long)
+00001364  588A                     374          add.l   #4,a2
+00001366  588B                     375          add.l   #4,a3
+00001368  588C                     376          add.l   #4,a4
+0000136A                           377          
+0000136A  5347                     378          subi    #1,d7               *check loop counter to update all objects
+0000136C  66E6                     379          bne     updateObjectLoop
+0000136E                           380  
+0000136E  4CDF 7FFF                381          movem.l (sp)+,ALL_REG
+00001372  4E75                     382          rts
+00001374                           383  
+00001374                           384  
+00001374                           385  resetObject
+00001374  22BC 00000352            386          move.l  #OBJ_START_X,(a1) *reset X position
+0000137A  4BF9 0000152E            387          lea     RANDOMVAL,a5
+00001380                           388    
+00001380  2C3C 0000024E            389          move.l  #MAX_BOTTOM_Y,d6        *set mod/offset value for height
+00001386  766E                     390          move.l  #HEIGHT_OFFSET,d3
+00001388  4EB9 000013A8            391          jsr     getRandomVal
+0000138E                           392          
+0000138E  2482                     393          move.l  d2,(a2)                 *apply random height
+00001390                           394       
+00001390  7C0C                     395          move.l  #MAX_SPEED,d6           *set mod/offset value for speed
+00001392  2639 00001522            396          move.l  speedOffset,d3
+00001398  4EB9 000013A8            397          jsr     getRandomVal
+0000139E                           398          
+0000139E  2882                     399          move.l  d2,(a4)                 *apply random speed
+000013A0  26BC 00000001            400          move.l  #1,(a3)                 *set object active
+000013A6                           401          
+000013A6  4E75                     402          rts
+000013A8                           403  
+000013A8                           404  
+000013A8                           405  getRandomVal
+000013A8  2215                     406          move.l  (a5),d1
+000013AA  70AF                     407          move.l  #$AF-$100,d0
+000013AC  7412                     408          move.l  #18,d2          *set loop counter
+000013AE                           409  keepLooping:
+000013AE  D281                     410          add.l   d1,d1           *shift left 1 bit
+000013B0  6402                     411          bcc.s   doneLooping     *if bit not set skip feedback
+000013B2  B101                     412          eor.b   d0,d1           *Galois LFSR feedback
+000013B4                           413  doneLooping:
+000013B4  51CA FFF8                414          dbf     d2,keepLooping
+000013B8  2A81                     415          move.l  d1,(a5)         *save new seed
+000013BA                           416          
+000013BA  4285                     417          clr.l   d5
+000013BC  3A01                     418          move.w  d1,d5
+000013BE  8AC6                     419          divu    d6,d5           *mod random value to get range
+000013C0  4845                     420          swap    d5
+000013C2  DA83                     421          add.l   d3,d5           *apply offset
+000013C4  3405                     422          move.w  d5,d2
+000013C6  4E75                     423          rts
+000013C8                           424          
+000013C8                           425          
+000013C8                           426  resetObjectStats
+000013C8  23FC 000000FA 000014C2   427          move.l  #250,coin1TopY  *reset Y position
+000013D2  23FC 00000172 000014C6   428          move.l  #370,coin2TopY
+000013DC  23FC 000001F4 000014CA   429          move.l  #500,coin3TopY
+000013E6  23FC 0000012C 000014CE   430          move.l  #300,enemy1TopY
+000013F0  23FC 000001CC 000014D2   431          move.l  #460,enemy2TopY
+000013FA  23FC 00000226 000014D6   432          move.l  #550,enemy3TopY  
+00001404                           433  
+00001404  23FC 00000352 000014DA   434          move.l  #850,coin1LeftX  *reset X position
+0000140E  23FC 00000352 000014DE   435          move.l  #850,coin2LeftX
+00001418  23FC 00000352 000014E2   436          move.l  #850,coin3LeftX
+00001422  23FC 00000352 000014E6   437          move.l  #850,enemy1LeftX
+0000142C  23FC 00000352 000014EA   438          move.l  #850,enemy2LeftX
+00001436  23FC 00000352 000014EE   439          move.l  #850,enemy3LeftX 
+00001440                           440  
+00001440  23FC 00000003 000014F2   441          move.l  #3,coin1Speed   *reset speed
+0000144A  23FC 00000008 000014F6   442          move.l  #8,coin2Speed 
+00001454  23FC 00000005 000014FA   443          move.l  #5,coin3Speed 
+0000145E  23FC 00000008 000014FE   444          move.l  #8,enemy1Speed 
+00001468  23FC 00000008 00001502   445          move.l  #8,enemy2Speed 
+00001472  23FC 00000005 00001506   446          move.l  #5,enemy3Speed  
+0000147C                           447          
+0000147C  23FC 00000001 0000150A   448          move.l  #1,coin1Active   *reset active flag
+00001486  23FC 00000001 0000150E   449          move.l  #1,coin2Active 
+00001490  23FC 00000001 00001512   450          move.l  #1,coin3Active
+0000149A  23FC 00000001 00001516   451          move.l  #1,enemy1Active
+000014A4  23FC 00000001 0000151A   452          move.l  #1,enemy2Active
+000014AE  23FC 00000001 0000151E   453          move.l  #1,enemy3Active
+000014B8                           454          
+000014B8  21FC 00000001 129A       455          move.l  #1,jumpFlag
+000014C0                           456  
+000014C0  4E75                     457          rts 
+000014C2                           458  
+000014C2                           459    
+000014C2                           460  
+000014C2                           461  
+000014C2                           462  topYTable: 
+000014C2= 000000FA                 463  coin1TopY           dc.l 250
+000014C6= 00000172                 464  coin2TopY           dc.l 370
+000014CA= 000001F4                 465  coin3TopY           dc.l 500
+000014CE= 0000012C                 466  enemy1TopY          dc.l 300
+000014D2= 000001CC                 467  enemy2TopY          dc.l 460
+000014D6= 00000226                 468  enemy3TopY          dc.l 550 
+000014DA                           469  
+000014DA                           470  leftXTable
+000014DA= 00000352                 471  coin1LeftX          dc.l 850
+000014DE= 00000352                 472  coin2LeftX          dc.l 850 
+000014E2= 00000352                 473  coin3LeftX          dc.l 850
+000014E6= 00000352                 474  enemy1LeftX         dc.l 850
+000014EA= 00000352                 475  enemy2LeftX         dc.l 850
+000014EE= 00000352                 476  enemy3LeftX         dc.l 850
+000014F2                           477    
+000014F2                           478  objSpeedTable
+000014F2= 00000003                 479  coin1Speed          dc.l 3 
+000014F6= 00000008                 480  coin2Speed          dc.l 8
+000014FA= 00000005                 481  coin3Speed          dc.l 5
+000014FE= 00000008                 482  enemy1Speed         dc.l 8 
+00001502= 00000008                 483  enemy2Speed         dc.l 8
+00001506= 00000005                 484  enemy3Speed         dc.l 5
+0000150A                           485  
+0000150A                           486  objActiveTable
+0000150A= 00000001                 487  coin1Active         dc.l 1
+0000150E= 00000001                 488  coin2Active         dc.l 1
+00001512= 00000001                 489  coin3Active         dc.l 1
+00001516= 00000001                 490  enemy1Active        dc.l 1
+0000151A= 00000001                 491  enemy2Active        dc.l 1
+0000151E= 00000001                 492  enemy3Active        dc.l 1
+00001522                           493  
+00001522= 00000005                 494  speedOffset         dc.l 5
+00001526= 00000000                 495  speedInterval       dc.l 0
+0000152A= 00000002                 496  speedThreshold      dc.l 2
+0000152E                           497  
+0000152E                           498    
+0000152E                           499  RANDOMVAL           ds.l    1
+00001532                           500              
+00001532                           501  
+00001532                           502  
+00001532                           503  
+00001532                           504  
+00001532                           505  
+00001532                           506  
+00001532                           507  
+00001532                           508  
+00001532                           509  
+00001532                           510  
+00001532                           511  
+00001532                           512  
+00001532                           513  
+00001532                           514  
+00001532                           515  
+00001532                           516  
+00001532                           517  
+00001532                           518  
+00001532                           519  
+00001532                           520  
+00001532                           521  
+00001532                           522  
+00001532                           523  
+00001532                           524  
+00001532                           525  
+00001532                           526  
+00001532                           527  
+00001532                           528  
+00001532                           529  
+00001532                           530  
+00001532                           531  
+00001532                           532  
+00001532                           533  
+00001532                           534  
+00001532                           535  
+00001532                           536  
+00001532                           537  
+00001532                           538  
+00001532                           539  
+00001532                           540  -------------------- end include --------------------
+00001532                           541      INCLUDE DetectCollision.X68
+00001532                           542  
+00001532                           543  
+00001532  =00000078                544  OUT_BOUNDS_TOP_Y        equ 120
+00001532  =000002A8                545  OUT_BOUNDS_BOTTOM_Y     equ 680
+00001532                           546  
+00001532  =000000A0                547  RIGHT_X_PLAYER_BOUND    equ 160
+00001532  =00000050                548  LEFT_X_PLAYER_BOUND     equ 80
+00001532                           549  
+00001532  =0000012C                550  RESET_PLAYER_POS        equ 300
+00001532  =FFFFFFF9                551  RESET_PLAYER_VELOCITY   equ -7
+00001532                           552  
+00001532  =0000001E                553  MAX_POINTS              equ 30
+00001532                           554  
+00001532                           555  
+00001532                           556  
+00001532                           557  
+00001532                           558  detectCollision                     
+00001532  48E7 FFFE                559          movem.l ALL_REG,-(sp)
+00001536                           560          
+00001536  47F8 1292                561          lea     currentPlayerY,a3       *set object properties
+0000153A  2813                     562          move.l  (a3),d4
+0000153C  41F8 14C2                563          lea     topYTable,a0
+00001540  43F8 14DA                564          lea     leftXTable,a1
+00001544  45F8 150A                565          lea     objActiveTable,a2
+00001548  7E00                     566          move.l  #0,d7                   *set object type (0 = coin, 1 = enemy)
+0000154A                           567          
+0000154A  7A02                     568          move.l  #2,d5                   *set loop counters to coins-1 & enemies
+0000154C  7C03                     569          move.l  #3,d6
+0000154E                           570  
+0000154E                           571  checkCollisionLoop:
+0000154E  201A                     572          move.l  (a2)+,d0
+00001550  2619                     573          move.l  (a1)+,d3
+00001552  2218                     574          move.l  (a0)+,d1
+00001554                           575          
+00001554  0C40 0000                576          cmpi    #0,d0                   *skip detection if coin is inactive
+00001558  6700 0008                577          beq     skipCheck  
+0000155C  4EB9 00001572            578          jsr     checkObject
+00001562                           579  
+00001562                           580  skipCheck:
+00001562  5345                     581          subi    #1,d5                   *loop through coins
+00001564  6AE8                     582          bpl     checkCollisionLoop
+00001566                           583          
+00001566  7E01                     584          move.l  #1,d7                   *set object type
+00001568                           585          
+00001568  5346                     586          subi    #1,d6                   *loop through enemies
+0000156A  6AE2                     587          bpl     checkCollisionLoop
+0000156C                           588          
+0000156C  4CDF 7FFF                589          movem.l (sp)+,ALL_REG
+00001570  4E75                     590          rts
+00001572                           591  
+00001572                           592  
+00001572                           593  
+00001572                           594  
+00001572                           595  checkObject
+00001572  48E7 FFFE                596          movem.l ALL_REG,-(sp)
+00001576                           597          
+00001576  2C3C 000000A0            598          move.l  #RIGHT_X_PLAYER_BOUND,d6
+0000157C  7A50                     599          move.l  #LEFT_X_PLAYER_BOUND,d5
+0000157E                           600          
+0000157E  B646                     601          cmp     d6,d3                   *check if object is within RIGHT side of collision box
+00001580  6B00 0008                602          bmi     rightXBoundsMatch
+00001584                           603          
+00001584  4CDF 7FFF                604          movem.l (sp)+,ALL_REG
+00001588  4E75                     605          rts
+0000158A                           606  rightXBoundsMatch:
+0000158A  B645                     607          cmp     d5,d3                   *check if object is within LEFT side of collision box
+0000158C  6A00 0008                608          bpl     leftXBoundsMatch
+00001590                           609          
+00001590  4CDF 7FFF                610          movem.l (sp)+,ALL_REG
+00001594  4E75                     611          rts
+00001596                           612  leftXBoundsMatch:              
+00001596  2604                     613          move.l  d4,d3                   *check if object is within TOP side of collision box
+00001598  0483 00000014            614          subi.l  #SHIP_HEIGHT,d3
+0000159E  B243                     615          cmp     d3,d1
+000015A0  6A00 0008                616          bpl     upperYBoundsMatch
+000015A4                           617          
+000015A4  4CDF 7FFF                618          movem.l (sp)+,ALL_REG
+000015A8  4E75                     619          rts        
+000015AA                           620  upperYBoundsMatch:
+000015AA  2404                     621          move.l  d4,d2                   *check if object is within BOTTOM of collision box
+000015AC  0682 00000014            622          addi.l  #SHIP_HEIGHT,d2
+000015B2  B242                     623          cmp     d2,d1
+000015B4  6B00 0008                624          bmi     collisionFound
+000015B8                           625          
+000015B8  4CDF 7FFF                626          movem.l (sp)+,ALL_REG
+000015BC  4E75                     627          rts
+000015BE                           628  
+000015BE                           629  collisionFound:
+000015BE  BEBC 00000001            630          cmp.l   #1,d7                   *checks if collision is with enemy or coin
+000015C4  6700 005C                631          beq     handleEnemyCollision
+000015C8                           632          
+000015C8                           633  handleCoinCollision:
+000015C8  7049                     634          moveq   #PLAY_SINGLE_SOUND_COMMAND,d0   *play coin sound
+000015CA  43F9 0000169E            635          lea     coinSound,a1
+000015D0  4E4F                     636          trap    #15
+000015D2                           637          
+000015D2  257C 00000000 FFFC       638          move.l  #0,(-4,a2)                      *set object inactive
+000015DA                           639          
+000015DA  4DF9 000016C8            640          lea     currentScore1,a6                *update score & reprint score
+000015E0  5296                     641          addi.l  #1,(a6)
+000015E2  4EB9 000018C2            642          jsr     reprintScoreBackground 
+000015E8  4EB9 000016D8            643          jsr     updateSevenSegment
+000015EE                           644          
+000015EE  52B9 000016D0            645          addi.l  #1,rawScore                     *update total score and check if player won
+000015F4  701E                     646          move.l  #MAX_POINTS,d0        
+000015F6  B0B9 000016D0            647          cmp.l   rawScore,d0
+000015FC  6700 009C                648          beq     playerWon
+00001600                           649          
+00001600  52B8 1526                650          addi.l  #1,speedInterval                *increase object speed every two coins collected
+00001604  2038 152A                651          move.l  speedThreshold,d0
+00001608  B0B8 1526                652          cmp.l   speedInterval,d0
+0000160C  6600 000E                653          bne     noSpeedIncrease
+00001610  54B8 1522                654          addi.l  #2,speedOffset
+00001614  21FC 00000000 1526       655          move.l  #0,speedInterval      
+0000161C                           656  noSpeedIncrease:
+0000161C  4CDF 7FFF                657          movem.l (sp)+,ALL_REG
+00001620  4E75                     658          rts  
+00001622                           659      
+00001622                           660  handleEnemyCollision:
+00001622  7049                     661          moveq   #PLAY_SINGLE_SOUND_COMMAND,d0   *play crash sound
+00001624  43F9 000016AC            662          lea     crashSound,a1
+0000162A  4E4F                     663          trap    #15
+0000162C                           664  
+0000162C  257C 00000000 FFFC       665          move.l  #0,(-4,a2)                      *set object inactive
+00001634                           666              
+00001634  4EB9 0000167C            667          jsr     damagePlayer
+0000163A                           668  
+0000163A  4CDF 7FFF                669          movem.l (sp)+,ALL_REG
+0000163E  4E75                     670          rts
+00001640                           671             
+00001640                           672  
+00001640                           673  detectPlayerOutOfBounds
+00001640  48E7 FFFE                674          movem.l ALL_REG,-(sp)
+00001644                           675          
+00001644  7878                     676          move.l  #OUT_BOUNDS_TOP_Y,d4
+00001646  2A3C 000002A8            677          move.l  #OUT_BOUNDS_BOTTOM_Y,d5
+0000164C                           678          
+0000164C  B882                     679          cmp.l   d2,d4                           *check if too high
+0000164E  6A00 000E                680          bpl     playerTooFar
+00001652                           681          
+00001652  BA82                     682          cmp.l   d2,d5                           *check if too low
+00001654  6B00 0008                683          bmi     playerTooFar
+00001658                           684          
+00001658  4CDF 7FFF                685          movem.l (sp)+,ALL_REG
+0000165C  4E75                     686          rts
+0000165E                           687  
+0000165E                           688  playerTooFar:      
+0000165E  7049                     689          moveq   #PLAY_SINGLE_SOUND_COMMAND,d0   *play crash sound
+00001660  43F9 000016AC            690          lea     crashSound,a1
+00001666  4E4F                     691          trap    #15
+00001668                           692  
+00001668  4EB9 0000167C            693          jsr     damagePlayer                    
+0000166E                           694   
+0000166E  4CDF 7FFF                695          movem.l (sp)+,ALL_REG
+00001672  243C 0000012C            696          move.l  #RESET_PLAYER_POS,d2            *reset player position
+00001678  7EF9                     697          moveq   #RESET_PLAYER_VELOCITY,d7
+0000167A  4E75                     698          rts
+0000167C                           699              
+0000167C                           700  damagePlayer
+0000167C  4DF9 000016D4            701          lea     currentLives,a6
+00001682  5396                     702          subi.l  #1,(a6)
+00001684  4EB9 000019FA            703          jsr     printUpdatedLives
+0000168A  0C96 00000001            704          cmp.l   #1,(a6)
+00001690  6B00 0004                705          bmi     playerDead
+00001694  4E75                     706          rts     
+00001696                           707  playerDead:
+00001696  4EB8 11BC                708          jsr     gameOver
+0000169A                           709  playerWon:
+0000169A  4EB8 11EE                710          jsr     youWin
+0000169E                           711  
+0000169E                           712        
+0000169E= 43 6F 69 6E 53 6F ...    713  coinSound   dc.b 'CoinSound.wav',0
+000016AC= 43 72 61 73 68 53 ...    714  crashSound  dc.b 'CrashSound1.wav',0
+000016BC= 4D 65 72 63 75 72 ...    715  loopMusic   dc.b 'Mercury.wav',0
+000016C8                           716  
+000016C8                           717  
+000016C8= 00000000                 718  currentScore1   dc.l 0   
+000016CC= 00000000                 719  currentScore2   dc.l 0
+000016D0= 00000000                 720  rawScore        dc.l 0
+000016D4                           721  
+000016D4= 00000003                 722  currentLives    dc.l 3       
+000016D8                           723  
+000016D8                           724  
+000016D8                           725  
+000016D8                           726  
+000016D8                           727  
+000016D8                           728  
+000016D8                           729  
+000016D8                           730  
+000016D8                           731  
+000016D8                           732  
+000016D8                           733  
+000016D8                           734  
+000016D8                           735  
+000016D8                           736  
+000016D8                           737  
+000016D8                           738  
+000016D8                           739  
+000016D8                           740  
+000016D8                           741  
+000016D8                           742  
+000016D8                           743  
+000016D8                           744  
+000016D8                           745  
+000016D8                           746  
+000016D8                           747  
+000016D8                           748  
+000016D8                           749  
+000016D8                           750  
+000016D8                           751  
+000016D8                           752  
+000016D8                           753  
+000016D8                           754  
+000016D8                           755  
+000016D8                           756  
+000016D8                           757  
+000016D8                           758  
+000016D8                           759  
+000016D8                           760  
+000016D8                           761  
+000016D8                           762  
+000016D8                           763  
+000016D8                           764  
+000016D8                           765  
+000016D8                           766  
+000016D8                           767  
+000016D8                           768  
+000016D8                           769  
+000016D8                           770  
+000016D8                           771  
+000016D8                           772  
+000016D8                           773  
+000016D8                           774  
+000016D8                           775  
+000016D8                           776  
+000016D8                           777  
+000016D8                           778  
+000016D8                           779  
+000016D8                           780  
+000016D8                           781  
+000016D8                           782  
+000016D8                           783  
+000016D8                           784  
+000016D8                           785  
+000016D8                           786  
+000016D8                           787  
+000016D8                           788  
+000016D8                           789  -------------------- end include --------------------
+000016D8                           790      INCLUDE SevenSegLED.X68
+000016D8                           791  
+000016D8                           792  
+000016D8  =00000004                793  PEN_WIDTH       equ 4
+000016D8  =0000005D                794  PEN_WIDTH_CODE  equ 93
+000016D8  =00000054                795  DRAW_LINE_CODE  equ 84
+000016D8                           796  
+000016D8                           797  
+000016D8                           798  updateSevenSegment                     
+000016D8  48E7 FFFE                799          movem.l ALL_REG,-(sp)
+000016DC                           800          
+000016DC  41F8 16C8                801          lea     currentScore1,a0
+000016E0  43F8 16CC                802          lea     currentScore2,a1
+000016E4  2010                     803          move.l  (a0),d0
+000016E6                           804          
+000016E6  0C40 000A                805          cmpi    #10,d0           *check if first digit goes over 9, reset first digit and increment second
+000016EA  6600 000C                806          bne     updateFirstDigit
+000016EE  20BC 00000000            807          move.l  #0,(a0)
+000016F4  2010                     808          move.l  (a0),d0
+000016F6  5291                     809          add.l   #1,(a1)
+000016F8                           810          
+000016F8                           811  updateFirstDigit:
+000016F8  41F9 00001786            812          lea     segmentMaskTable,a0
+000016FE  43F9 000017C8            813          lea     segmentCoordTable2,a1
+00001704  4241                     814          clr     d1
+00001706  1230 0000                815          move.b  (a0,d0),d1
+0000170A  7C00                     816          move.l  #0,d6               *set counter
+0000170C  4EB9 00001738            817          jsr     checkSegmentActive
+00001712                           818  updateSecondDigit:
+00001712  41F8 16CC                819          lea     currentScore2,a0
+00001716  2010                     820          move.l  (a0),d0
+00001718  41F9 00001786            821          lea     segmentMaskTable,a0
+0000171E  43F9 00001790            822          lea     segmentCoordTable1,a1
+00001724  4241                     823          clr     d1
+00001726  1230 0000                824          move.b  (a0,d0),d1
+0000172A  7C00                     825          move.l  #0,d6               *set counter
+0000172C  4EB9 00001738            826          jsr     checkSegmentActive
+00001732                           827  
+00001732  4CDF 7FFF                828          movem.l (sp)+,ALL_REG
+00001736  4E75                     829          rts    
+00001738                           830  
+00001738                           831  checkSegmentActive        
+00001738  2401                     832          move.l  d1,d2
+0000173A  0202 0001                833          andi.b  #1,d2
+0000173E  6700 0008                834          beq     nextSegment
+00001742  4EB9 00001756            835          jsr     drawSegment
+00001748                           836  nextSegment:
+00001748  E209                     837          lsr.b   #1,d1
+0000174A  5286                     838          addi.l  #1,d6
+0000174C  BCBC 00000007            839          cmp.l   #7,d6  *loop through all 7 possible segments
+00001752  6DE4                     840          blt     checkSegmentActive
+00001754  4E75                     841          rts
+00001756                           842  
+00001756                           843  drawSegment
+00001756  48E7 FFFE                844          movem.l ALL_REG,-(sp)
+0000175A                           845          
+0000175A  2A06                     846          move.l  d6,d5
+0000175C  CAFC 0008                847          mulu    #8,d5
+00001760  D3C5                     848          add.l   d5,a1
+00001762                           849          
+00001762  223C 00FFFFFF            850          move.l  #WHITE,d1 
+00001768  103C 0050                851          move.b  #SET_PEN_COLOR_COMMAND,d0
+0000176C  4E4F                     852          trap    #15
+0000176E                           853  
+0000176E  705D                     854          move.l  #PEN_WIDTH_CODE,d0
+00001770  7204                     855          move.l  #PEN_WIDTH,d1
+00001772  4E4F                     856          trap    #15
+00001774                           857          
+00001774  7054                     858          move.l  #DRAW_LINE_CODE,d0
+00001776  3219                     859          move.w  (a1)+,d1
+00001778  3419                     860          move.w  (a1)+,d2
+0000177A  3619                     861          move.w  (a1)+,d3
+0000177C  3819                     862          move.w  (a1)+,d4
+0000177E  4E4F                     863          trap    #15
+00001780                           864          
+00001780                           865          
+00001780  4CDF 7FFF                866          movem.l (sp)+,ALL_REG
+00001784  4E75                     867          rts
+00001786                           868  
+00001786                           869                 
+00001786                           870  
+00001786                           871  
+00001786                           872  segmentMaskTable:
+00001786= 3F                       873  zeroMask    dc.b $3F
+00001787= 06                       874  oneMask     dc.b $6
+00001788= 5B                       875  twoMask     dc.b $5B
+00001789= 4F                       876  threeMask   dc.b $4F
+0000178A= 66                       877  fourMask    dc.b $66
+0000178B= 6D                       878  fiveMask    dc.b $6D
+0000178C= 7D                       879  sixMask     dc.b $7D
+0000178D= 07                       880  sevenMask   dc.b $7
+0000178E= 7F                       881  eightMask   dc.b $7F
+0000178F= 6F                       882  nineMask    dc.b $6F
+00001790                           883  
+00001790                           884  segmentCoordTable1:
+00001790= 001E                     885  a_X1_1  dc.w 30
+00001792= 0014                     886  a_Y1_1  dc.w 20
+00001794= 002D                     887  a_X2_1  dc.w 45
+00001796= 0014                     888  a_Y2_1  dc.w 20
+00001798                           889  
+00001798= 002D                     890  b_X1_1  dc.w 45
+0000179A= 0014                     891  b_Y1_1  dc.w 20
+0000179C= 002D                     892  b_X2_1  dc.w 45
+0000179E= 0023                     893  b_Y2_1  dc.w 35
+000017A0                           894  
+000017A0= 002D                     895  c_X1_1  dc.w 45
+000017A2= 0023                     896  c_Y1_1  dc.w 35
+000017A4= 002D                     897  c_X2_1  dc.w 45
+000017A6= 0032                     898  c_Y2_1  dc.w 50
+000017A8                           899  
+000017A8= 001E                     900  d_X1_1  dc.w 30
+000017AA= 0032                     901  d_Y1_1  dc.w 50
+000017AC= 002D                     902  d_X2_1  dc.w 45
+000017AE= 0032                     903  d_Y2_1  dc.w 50
+000017B0                           904  
+000017B0= 001E                     905  e_X1_1  dc.w 30
+000017B2= 0023                     906  e_Y1_1  dc.w 35
+000017B4= 001E                     907  e_X2_1  dc.w 30
+000017B6= 0032                     908  e_Y2_1  dc.w 50
+000017B8                           909  
+000017B8= 001E                     910  f_X1_1  dc.w 30
+000017BA= 0014                     911  f_Y1_1  dc.w 20
+000017BC= 001E                     912  f_X2_1  dc.w 30
+000017BE= 0023                     913  f_Y2_1  dc.w 35
+000017C0                           914  
+000017C0= 001E                     915  g_X1_1  dc.w 30
+000017C2= 0023                     916  g_Y1_1  dc.w 35
+000017C4= 002D                     917  g_X2_1  dc.w 45
+000017C6= 0023                     918  g_Y2_1  dc.w 35
+000017C8                           919  
+000017C8                           920  segmentCoordTable2:
+000017C8= 0032                     921  a_X1_2  dc.w 50
+000017CA= 0014                     922  a_Y1_2  dc.w 20
+000017CC= 0041                     923  a_X2_2  dc.w 65
+000017CE= 0014                     924  a_Y2_2  dc.w 20
+000017D0                           925  
+000017D0= 0041                     926  b_X1_2  dc.w 65
+000017D2= 0014                     927  b_Y1_2  dc.w 20
+000017D4= 0041                     928  b_X2_2  dc.w 65
+000017D6= 0023                     929  b_Y2_2  dc.w 35
+000017D8                           930  
+000017D8= 0041                     931  c_X1_2  dc.w 65
+000017DA= 0023                     932  c_Y1_2  dc.w 35
+000017DC= 0041                     933  c_X2_2  dc.w 65
+000017DE= 0032                     934  c_Y2_2  dc.w 50
+000017E0                           935  
+000017E0= 0032                     936  d_X1_2  dc.w 50
+000017E2= 0032                     937  d_Y1_2  dc.w 50
+000017E4= 0041                     938  d_X2_2  dc.w 65
+000017E6= 0032                     939  d_Y2_2  dc.w 50
+000017E8                           940  
+000017E8= 0032                     941  e_X1_2  dc.w 50
+000017EA= 0023                     942  e_Y1_2  dc.w 35
+000017EC= 0032                     943  e_X2_2  dc.w 50
+000017EE= 0032                     944  e_Y2_2  dc.w 50
+000017F0                           945  
+000017F0= 0032                     946  f_X1_2  dc.w 50
+000017F2= 0014                     947  f_Y1_2  dc.w 20
+000017F4= 0032                     948  f_X2_2  dc.w 50
+000017F6= 0023                     949  f_Y2_2  dc.w 35
+000017F8                           950  
+000017F8= 0032                     951  g_X1_2  dc.w 50
+000017FA= 0023                     952  g_Y1_2  dc.w 35
+000017FC= 0041                     953  g_X2_2  dc.w 65
+000017FE= 0023                     954  g_Y2_2  dc.w 35
+00001800                           955  
+00001800                           956  
+00001800                           957  
+00001800                           958  
+00001800                           959  
+00001800                           960  
+00001800                           961  
+00001800                           962  
+00001800                           963  
+00001800                           964  
+00001800                           965  
+00001800                           966  
+00001800                           967  
+00001800                           968  
+00001800                           969  
+00001800                           970  
+00001800                           971  
+00001800                           972  
+00001800                           973  
+00001800                           974  
+00001800                           975  
+00001800                           976  
+00001800                           977  
+00001800                           978  
+00001800                           979  
+00001800                           980  
+00001800                           981  
+00001800                           982  
+00001800                           983  
+00001800                           984  
+00001800                           985  
+00001800                           986  
+00001800                           987  
+00001800                           988  
+00001800                           989  -------------------- end include --------------------
+00001800                           990      INCLUDE BitMapDisplay.X68
+00001800                           991  
+00001800  =00000012                992  IMAGE_WIDTH_OFFSET      EQU 18
+00001800  =00000016                993  IMAGE_HEIGHT_OFFSET     EQU 22
+00001800  =0000000A                994  PIXEL_DATA_OFFSET       EQU 10
+00001800  =00000050                995  PEN_COLOR_TRAP_CODE     EQU 80
+00001800  =00000052                996  DRAW_PIXEL_TRAP_CODE    EQU 82
+00001800                           997  
+00001800  =00000019                998  BG_CHUNK_DISPLAY_X      equ 25
+00001800  =00000004                999  BG_CHUNK_DISPLAY_Y      equ 4
+00001800  =0000002D               1000  BG_CHUNK_WIDTH          equ 45
+00001800  =00000032               1001  BG_CHUNK_HEIGHT         equ 50
+00001800  =00000019               1002  BG_CHUNK_START_X        equ 25
+00001800  =00000004               1003  BG_CHUNK_START_Y        equ 4
+00001800                          1004  
+00001800  =0000003C               1005  PL_CHUNK_WIDTH          equ 60
+00001800  =00000020               1006  PL_CHUNK_HEIGHT         equ 32
+00001800  =00000000               1007  PL_CHUNK_START_X        equ 0
+00001800  =00000000               1008  PL_CHUNK_START_Y        equ 0
+00001800                          1009  
+00001800  =0000001E               1010  COIN_CHUNK_WIDTH        equ 30
+00001800  =0000001C               1011  COIN_CHUNK_HEIGHT       equ 28
+00001800  =00000000               1012  COIN_CHUNK_START_X      equ 0
+00001800  =00000000               1013  COIN_CHUNK_START_Y      equ 0
+00001800                          1014  
+00001800  =0000001E               1015  ENEMY_CHUNK_WIDTH       equ 30
+00001800  =00000014               1016  ENEMY_CHUNK_HEIGHT      equ 20
+00001800  =00000000               1017  ENEMY_CHUNK_START_X     equ 0
+00001800  =00000000               1018  ENEMY_CHUNK_START_Y     equ 0
+00001800                          1019  
+00001800  =00000298               1020  LIVES_DISPLAY_X         equ 664
+00001800  =00000011               1021  LIVES_DISPLAY_Y         equ 17
+00001800  =000000D8               1022  LIVES_CHUNK_WIDTH       equ 216
+00001800  =00000038               1023  LIVES_CHUNK_HEIGHT      equ 56
+00001800  =00000000               1024  LIVES_CHUNK_START_X     equ 0
+00001800  =00000000               1025  LIVES_CHUNK_START_Y     equ 0
+00001800                          1026  
+00001800  =00000011               1027  HEART_CROP_Y            equ 17
+00001800  =00000049               1028  HEART_CROP_WIDTH       equ 73
+00001800  =00000038               1029  HEART_CROP_HEIGHT       equ 56
+00001800                          1030  
+00001800                          1031          
+00001800                          1032  reprintPlayer
+00001800  48E7 FFFE               1033          movem.l ALL_REG,-(sp)
+00001804                          1034         
+00001804  43F9 005E73DC           1035          lea     chunkDisplayX,a1
+0000180A  22BC 00000064           1036          move.l  #SHIP_X_POSITION,(a1)
+00001810                          1037          
+00001810  45F9 005E73E0           1038          lea     chunkDisplayY,a2
+00001816  2482                    1039          move.l  d2,(a2)
+00001818                          1040          
+00001818  47F9 005E73D0           1041          lea     chunkWidth,a3
+0000181E  26BC 0000003C           1042          move.l  #PL_CHUNK_WIDTH,(a3)
+00001824                          1043                  
+00001824  4BF9 005E73D4           1044          lea     chunkWidthLoop,a5
+0000182A  2ABC 0000003C           1045          move.l  #PL_CHUNK_WIDTH,(a5)
+00001830                          1046          
+00001830  49F9 005E73D8           1047          lea     chunkHeight,a4
+00001836  28BC 00000020           1048          move.l  #PL_CHUNK_HEIGHT,(a4)
+0000183C                          1049          
+0000183C  4DF9 005E73C8           1050          lea     chunkStartX,a6
+00001842  2CBC 00000000           1051          move.l  #PL_CHUNK_START_X,(a6)
+00001848  4DF9 005E73CC           1052          lea     chunkStartY,a6
+0000184E  2CBC 00000000           1053          move.l  #PL_CHUNK_START_Y,(a6)
+00001854                          1054          
+00001854  41F9 002ECC50           1055          lea     playerImage,a0
+0000185A                          1056          
+0000185A  4EB9 00001A68           1057          jsr     cropAndPrintBMP32
+00001860                          1058          
+00001860                          1059  
+00001860  4CDF 7FFF               1060          movem.l (sp)+,ALL_REG
+00001864  4E75                    1061          rts
+00001866                          1062          
+00001866                          1063  reprintObject     
+00001866  48E7 FFFE               1064          movem.l ALL_REG,-(sp)
+0000186A                          1065          
+0000186A  43F9 005E73DC           1066          lea     chunkDisplayX,a1
+00001870  2281                    1067          move.l  d1,(a1)
+00001872                          1068          
+00001872  45F9 005E73E0           1069          lea     chunkDisplayY,a2
+00001878  2482                    1070          move.l  d2,(a2)
+0000187A                          1071          
+0000187A  47F9 005E73D0           1072          lea     chunkWidth,a3
+00001880  26BC 0000001E           1073          move.l  #COIN_CHUNK_WIDTH,(a3)
+00001886                          1074                  
+00001886  4BF9 005E73D4           1075          lea     chunkWidthLoop,a5
+0000188C  2ABC 0000001E           1076          move.l  #COIN_CHUNK_WIDTH,(a5)
+00001892                          1077          
+00001892  49F9 005E73D8           1078          lea     chunkHeight,a4
+00001898  28BC 0000001C           1079          move.l  #COIN_CHUNK_HEIGHT,(a4)
+0000189E                          1080          
+0000189E  4DF9 005E73C8           1081          lea     chunkStartX,a6
+000018A4  2CBC 00000000           1082          move.l  #COIN_CHUNK_START_X,(a6)
+000018AA  4DF9 005E73CC           1083          lea     chunkStartY,a6
+000018B0  2CBC 00000000           1084          move.l  #COIN_CHUNK_START_Y,(a6)
+000018B6                          1085          
+000018B6                          1086          
+000018B6  4EB9 00001A68           1087          jsr     cropAndPrintBMP32
+000018BC                          1088          
+000018BC  4CDF 7FFF               1089          movem.l (sp)+,ALL_REG
+000018C0  4E75                    1090          rts
+000018C2                          1091          
+000018C2                          1092  reprintScoreBackground
+000018C2  48E7 FFFE               1093          movem.l ALL_REG,-(sp)
+000018C6                          1094          
+000018C6  43F9 005E73DC           1095          lea     chunkDisplayX,a1
+000018CC  22BC 00000019           1096          move.l  #BG_CHUNK_DISPLAY_X,(a1)
+000018D2                          1097          
+000018D2  45F9 005E73E0           1098          lea     chunkDisplayY,a2
+000018D8  24BC 00000004           1099          move.l  #BG_CHUNK_DISPLAY_Y,(a2)
+000018DE                          1100          
+000018DE  47F9 005E73D0           1101          lea     chunkWidth,a3
+000018E4  26BC 0000002D           1102          move.l  #BG_CHUNK_WIDTH,(a3)
+000018EA                          1103                  
+000018EA  4BF9 005E73D4           1104          lea     chunkWidthLoop,a5
+000018F0  2ABC 0000002D           1105          move.l  #BG_CHUNK_WIDTH,(a5)
+000018F6                          1106          
+000018F6  49F9 005E73D8           1107          lea     chunkHeight,a4
+000018FC  28BC 00000032           1108          move.l  #BG_CHUNK_HEIGHT,(a4)
+00001902                          1109          
+00001902  4DF9 005E73C8           1110          lea     chunkStartX,a6
+00001908  2CBC 00000019           1111          move.l  #BG_CHUNK_START_X,(a6)
+0000190E  4DF9 005E73CC           1112          lea     chunkStartY,a6
+00001914  2CBC 00000004           1113          move.l  #BG_CHUNK_START_Y,(a6)
+0000191A                          1114          
+0000191A  41F9 00001AF8           1115          lea     borderImage,a0
+00001920                          1116          
+00001920  4EB9 00001A68           1117          jsr     cropAndPrintBMP32
+00001926                          1118          
+00001926                          1119  
+00001926  4CDF 7FFF               1120          movem.l (sp)+,ALL_REG
+0000192A  4E75                    1121          rts
+0000192C                          1122  
+0000192C                          1123  
+0000192C                          1124  printBackground
+0000192C  48E7 FFFE               1125          movem.l ALL_REG,-(sp)
+00001930                          1126          
+00001930  43F9 005E73DC           1127          lea     chunkDisplayX,a1
+00001936  22BC 00000000           1128          move.l  #0,(a1)
+0000193C                          1129          
+0000193C  45F9 005E73E0           1130          lea     chunkDisplayY,a2
+00001942  24BC 00000000           1131          move.l  #0,(a2)
+00001948                          1132          
+00001948  47F9 005E73D0           1133          lea     chunkWidth,a3
+0000194E  26BC 00000384           1134          move.l  #OUTPUT_WIDTH,(a3)
+00001954                          1135                  
+00001954  4BF9 005E73D4           1136          lea     chunkWidthLoop,a5
+0000195A  2ABC 00000384           1137          move.l  #OUTPUT_WIDTH,(a5)
+00001960                          1138          
+00001960  49F9 005E73D8           1139          lea     chunkHeight,a4
+00001966  28BC 00000352           1140          move.l  #OUTPUT_FULL_HEIGHT,(a4)
+0000196C                          1141          
+0000196C  4DF9 005E73C8           1142          lea     chunkStartX,a6
+00001972  2CBC 00000000           1143          move.l  #0,(a6)
+00001978  4DF9 005E73CC           1144          lea     chunkStartY,a6
+0000197E  2CBC 00000000           1145          move.l  #0,(a6)
+00001984                          1146          
+00001984  4EB9 00001A68           1147          jsr     cropAndPrintBMP32
+0000198A                          1148          
+0000198A                          1149  
+0000198A  4CDF 7FFF               1150          movem.l (sp)+,ALL_REG
+0000198E  4E75                    1151          rts
+00001990                          1152        
+00001990                          1153  printInitLives
+00001990  48E7 FFFE               1154          movem.l ALL_REG,-(sp)
+00001994                          1155          
+00001994  43F9 005E73DC           1156          lea     chunkDisplayX,a1
+0000199A  22BC 00000298           1157          move.l  #LIVES_DISPLAY_X,(a1)
+000019A0                          1158          
+000019A0  45F9 005E73E0           1159          lea     chunkDisplayY,a2
+000019A6  24BC 00000011           1160          move.l  #LIVES_DISPLAY_Y,(a2)
+000019AC                          1161          
+000019AC  47F9 005E73D0           1162          lea     chunkWidth,a3
+000019B2  26BC 000000D8           1163          move.l  #LIVES_CHUNK_WIDTH,(a3)
+000019B8                          1164                  
+000019B8  4BF9 005E73D4           1165          lea     chunkWidthLoop,a5
+000019BE  2ABC 000000D8           1166          move.l  #LIVES_CHUNK_WIDTH,(a5)
+000019C4                          1167          
+000019C4  49F9 005E73D8           1168          lea     chunkHeight,a4
+000019CA  28BC 00000038           1169          move.l  #LIVES_CHUNK_HEIGHT,(a4)
+000019D0                          1170          
+000019D0  4DF9 005E73C8           1171          lea     chunkStartX,a6
+000019D6  2CBC 00000000           1172          move.l  #LIVES_CHUNK_START_X,(a6)
+000019DC  4DF9 005E73CC           1173          lea     chunkStartY,a6
+000019E2  2CBC 00000000           1174          move.l  #LIVES_CHUNK_START_Y,(a6)
+000019E8                          1175          
+000019E8  41F9 002F0538           1176          lea     heartsImage,a0
+000019EE                          1177          
+000019EE  4EB9 00001A68           1178          jsr     cropAndPrintBMP32
+000019F4                          1179  
+000019F4                          1180  
+000019F4                          1181  
+000019F4  4CDF 7FFF               1182          movem.l (sp)+,ALL_REG
+000019F8  4E75                    1183          rts
+000019FA                          1184          
+000019FA                          1185  printUpdatedLives
+000019FA  48E7 FFFE               1186          movem.l ALL_REG,-(sp)
+000019FE                          1187          
+000019FE  41F9 005E73E4           1188          lea     heartCropX,a0
+00001A04                          1189  
+00001A04  43F9 005E73DC           1190          lea     chunkDisplayX,a1
+00001A0A  2290                    1191          move.l  (a0),(a1)
+00001A0C                          1192          
+00001A0C  45F9 005E73E0           1193          lea     chunkDisplayY,a2
+00001A12  24BC 00000011           1194          move.l  #HEART_CROP_Y,(a2)
+00001A18                          1195          
+00001A18  47F9 005E73D0           1196          lea     chunkWidth,a3
+00001A1E  26BC 00000049           1197          move.l  #HEART_CROP_WIDTH,(a3)
+00001A24                          1198                  
+00001A24  4BF9 005E73D4           1199          lea     chunkWidthLoop,a5
+00001A2A  2ABC 00000049           1200          move.l  #HEART_CROP_WIDTH,(a5)
+00001A30                          1201          
+00001A30  49F9 005E73D8           1202          lea     chunkHeight,a4
+00001A36  28BC 00000038           1203          move.l  #HEART_CROP_HEIGHT,(a4)
+00001A3C                          1204          
+00001A3C  4DF9 005E73C8           1205          lea     chunkStartX,a6
+00001A42  2C90                    1206          move.l  (a0),(a6)
+00001A44  4DF9 005E73CC           1207          lea     chunkStartY,a6
+00001A4A  2CBC 00000011           1208          move.l  #HEART_CROP_Y,(a6)
+00001A50                          1209          
+00001A50  0690 00000049           1210          add.l  #HEART_CROP_WIDTH,(a0)
+00001A56                          1211          
+00001A56  41F9 00001AF8           1212          lea     borderImage,a0
+00001A5C                          1213          
+00001A5C  4EB9 00001A68           1214          jsr     cropAndPrintBMP32
+00001A62                          1215  
+00001A62                          1216  
+00001A62                          1217  
+00001A62  4CDF 7FFF               1218          movem.l (sp)+,ALL_REG
+00001A66  4E75                    1219          rts
+00001A68                          1220  
+00001A68                          1221  cropAndPrintBMP32                    
+00001A68                          1222  
+00001A68                          1223      
+00001A68                          1224          *Initial Setup
+00001A68                          1225          
+00001A68  7012                    1226          move.l #IMAGE_WIDTH_OFFSET,d0 *Get Width
+00001A6A  2E30 0000               1227          move.l (a0,d0),d7
+00001A6E  E15F                    1228          rol.w #8,d7
+00001A70  4847                    1229          swap d7
+00001A72  E15F                    1230          rol.w #8,d7
+00001A74                          1231          
+00001A74  7016                    1232          move.l #IMAGE_HEIGHT_OFFSET,d0 *Get Height
+00001A76  2C30 0000               1233          move.l (a0,d0),d6
+00001A7A  E15E                    1234          rol.w #8,d6
+00001A7C  4846                    1235          swap d6
+00001A7E  E15E                    1236          rol.w #8,d6
+00001A80                          1237          
+00001A80  700A                    1238          move.l #PIXEL_DATA_OFFSET,d0 *Get pixel data offset
+00001A82  2230 0000               1239          move.l (a0,d0),d1
+00001A86  E159                    1240          rol.w #8,d1
+00001A88  4841                    1241          swap d1
+00001A8A  E159                    1242          rol.w #8,d1
+00001A8C  D1C1                    1243          add.l d1,a0
+00001A8E                          1244  
+00001A8E                          1245  
+00001A8E                          1246          *Screen Dimension Setup
+00001A8E  2611                    1247          move.l  (a1),d3  *Set  X start position on output window
+00001A90                          1248          
+00001A90  2A12                    1249          move.l  (a2),d5  *Set  Y start position on output window
+00001A92  DA94                    1250          add.l   (a4),d5
+00001A94  2805                    1251          move.l  d5,d4  
+00001A96                          1252  
+00001A96                          1253        
+00001A96                          1254          
+00001A96                          1255          *Move Pixel Pointer To Initial Position (width*4*[height - (chuckStartY+chuckHeight)])
+00001A96  4DF9 005E73CC           1256          lea     chunkStartY,a6 *account for rows
+00001A9C  2A06                    1257          move.l  d6,d5
+00001A9E  9A96                    1258          sub.l   (a6),d5
+00001AA0  9A94                    1259          sub.l   (a4),d5
+00001AA2  CAFC 0004               1260          mulu    #4,d5
+00001AA6  CAC7                    1261          mulu    d7,d5
+00001AA8                          1262          
+00001AA8  4DF9 005E73C8           1263          lea     chunkStartX,a6 *account for columns
+00001AAE  4281                    1264          clr.l   d1
+00001AB0  2216                    1265          move.l  (a6),d1
+00001AB2  C2FC 0004               1266          mulu    #4,d1
+00001AB6  DA81                    1267          add.l   d1,d5
+00001AB8                          1268  
+00001AB8  D1C5                    1269          add.l   d5,a0    
+00001ABA                          1270             
+00001ABA                          1271  widthLoop:
+00001ABA  4281                    1272          clr.l d1
+00001ABC                          1273          
+00001ABC  1218                    1274          move.b (a0)+,d1 *Set pixel pen color
+00001ABE  E189                    1275          lsl.l #8,d1
+00001AC0  1218                    1276          move.b (a0)+,d1
+00001AC2  E189                    1277          lsl.l #8,d1
+00001AC4  1218                    1278          move.b (a0)+,d1
+00001AC6  5248                    1279          add #1,a0 *(This is to skip over the alpha value, this program does not utilize the alpha)
+00001AC8                          1280          
+00001AC8  7050                    1281          move.l  #PEN_COLOR_TRAP_CODE, d0
+00001ACA  4E4F                    1282          trap    #15
+00001ACC                          1283  
+00001ACC                          1284          
+00001ACC  7052                    1285          move.l  #DRAW_PIXEL_TRAP_CODE,d0 * Color Pixel
+00001ACE  2203                    1286          move.l  d3,d1
+00001AD0  2404                    1287          move.l  d4,d2
+00001AD2  4E4F                    1288          trap    #15
+00001AD4                          1289          
+00001AD4  5283                    1290          addi.l  #1,d3 *increment current pixel on X and check if the row continues
+00001AD6  5393                    1291          subi.l  #1,(a3) *a3 will serve as the width loop counter
+00001AD8  66E0                    1292          bne     widthLoop
+00001ADA                          1293          
+00001ADA                          1294  heightLoop:
+00001ADA  2611                    1295          move.l  (a1),d3 * reset width
+00001ADC  2695                    1296          move.l  (a5),(a3)
+00001ADE                          1297          
+00001ADE  4285                    1298          clr.l   d5      *adjust pixel pointer
+00001AE0  2A07                    1299          move.l  d7,d5
+00001AE2  9A95                    1300          sub.l   (a5),d5
+00001AE4  CAFC 0004               1301          mulu    #4,d5
+00001AE8  D1C5                    1302          add.l   d5,a0
+00001AEA                          1303                  
+00001AEA                          1304  
+00001AEA  5384                    1305          subi.l  #1,d4 *decrement current pixel on Y and check if the column continues
+00001AEC  5394                    1306          subi.l  #1,(a4) *a4 will serve as the height loop counter
+00001AEE  0C94 00000001           1307          cmp.l   #1,(a4)
+00001AF4  66C4                    1308          bne     widthLoop
+00001AF6                          1309          
+00001AF6  4E75                    1310          rts
+00001AF8                          1311  
+00001AF8                          1312          
+00001AF8                          1313          
+00001AF8                          1314        
+00001AF8                          1315  borderImage:
+00001AF8                          1316          INCBIN    "FireSky1.bmp" 
+002ECC50                          1317  playerImage:
+002ECC50                          1318          INCBIN    "SpaceBoy.bmp"
+002EEA88                          1319  coinImage:
+002EEA88                          1320          INCBIN    "CoinBoy.bmp"
+002EF7E0                          1321  enemyImage:
+002EF7E0                          1322          INCBIN    "Fireboy2.bmp"
+002F0538                          1323  heartsImage:
+002F0538                          1324          INCBIN    "Hearts.bmp"
+002FC270                          1325  titleImage:
+002FC270                          1326          INCBIN    "TitleScreen1.bmp"
+005E73C8                          1327  
+005E73C8                          1328  
+005E73C8                          1329  
+005E73C8                          1330  chunkStartX     ds.l 1
+005E73CC                          1331  chunkStartY     ds.l 1
+005E73D0                          1332  chunkWidth      ds.l 1
+005E73D4                          1333  chunkWidthLoop  ds.l 1
+005E73D8                          1334  chunkHeight     ds.l 1
+005E73DC                          1335  chunkDisplayX   ds.l 1
+005E73E0                          1336  chunkDisplayY   ds.l 1
+005E73E4                          1337  
+005E73E4= 00000298                1338  heartCropX      dc.l 664
+005E73E8                          1339  
+005E73E8                          1340  
+005E73E8                          1341  
+005E73E8                          1342  
+005E73E8                          1343  
+005E73E8                          1344  
+005E73E8                          1345  
+005E73E8                          1346  
+005E73E8                          1347  
+005E73E8                          1348  
+005E73E8                          1349  
+005E73E8                          1350  
+005E73E8                          1351  
+005E73E8                          1352  
+005E73E8                          1353  
+005E73E8                          1354  
+005E73E8                          1355  
+005E73E8                          1356  
+005E73E8                          1357  
+005E73E8                          1358  
+005E73E8                          1359  
+005E73E8                          1360  
+005E73E8                          1361  
+005E73E8                          1362  
+005E73E8                          1363  
+005E73E8                          1364  
+005E73E8                          1365  
+005E73E8                          1366  
+005E73E8                          1367  
+005E73E8                          1368  
+005E73E8                          1369  
+005E73E8                          1370  
+005E73E8                          1371  
+005E73E8                          1372  
+005E73E8                          1373  
+005E73E8                          1374  
+005E73E8                          1375  
+005E73E8                          1376  
+005E73E8                          1377  
+005E73E8                          1378  
+005E73E8                          1379  -------------------- end include --------------------
+005E73E8                          1380  
+005E73E8                          1381      END    START
+
+No errors detected
+No warnings generated
+
+
+SYMBOL TABLE INFORMATION
+Symbol-name         Value
+-------------------------
+ALL_REG             7FFF
+APPLYPLAYERVELOCITY  1056
+A_X1_1              1790
+A_X1_2              17C8
+A_X2_1              1794
+A_X2_2              17CC
+A_Y1_1              1792
+A_Y1_2              17CA
+A_Y2_1              1796
+A_Y2_2              17CE
+BG_CHUNK_DISPLAY_X  19
+BG_CHUNK_DISPLAY_Y  4
+BG_CHUNK_HEIGHT     32
+BG_CHUNK_START_X    19
+BG_CHUNK_START_Y    4
+BG_CHUNK_WIDTH      2D
+BLACK               FFFFFFFF
+BORDERIMAGE         1AF8
+B_X1_1              1798
+B_X1_2              17D0
+B_X2_1              179C
+B_X2_2              17D4
+B_Y1_1              179A
+B_Y1_2              17D2
+B_Y2_1              179E
+B_Y2_2              17D6
+CHECKCOLLISIONLOOP  154E
+CHECKOBJECT         1572
+CHECKSEGMENTACTIVE  1738
+CHUNKDISPLAYX       5E73DC
+CHUNKDISPLAYY       5E73E0
+CHUNKHEIGHT         5E73D8
+CHUNKSTARTX         5E73C8
+CHUNKSTARTY         5E73CC
+CHUNKWIDTH          5E73D0
+CHUNKWIDTHLOOP      5E73D4
+CLEARPLAYAREA       10C2
+COIN1ACTIVE         150A
+COIN1LEFTX          14DA
+COIN1SPEED          14F2
+COIN1TOPY           14C2
+COIN2ACTIVE         150E
+COIN2LEFTX          14DE
+COIN2SPEED          14F6
+COIN2TOPY           14C6
+COIN3ACTIVE         1512
+COIN3LEFTX          14E2
+COIN3SPEED          14FA
+COIN3TOPY           14CA
+COINIMAGE           2EEA88
+COINSOUND           169E
+COIN_CHUNK_HEIGHT   1C
+COIN_CHUNK_START_X  0
+COIN_CHUNK_START_Y  0
+COIN_CHUNK_WIDTH    1E
+COLLISIONFOUND      15BE
+CRASHSOUND          16AC
+CROPANDPRINTBMP32   1A68
+CUMMULATIVEVELOCITY  1296
+CURRENTLIVES        16D4
+CURRENTPLAYERY      1292
+CURRENTSCORE1       16C8
+CURRENTSCORE2       16CC
+C_X1_1              17A0
+C_X1_2              17D8
+C_X2_1              17A4
+C_X2_2              17DC
+C_Y1_1              17A2
+C_Y1_2              17DA
+C_Y2_1              17A6
+C_Y2_2              17DE
+DAMAGEPLAYER        167C
+DETECTCOLLISION     1532
+DETECTPLAYEROUTOFBOUNDS  1640
+DISPLAYLOADMESSAGE  1180
+DISPLAY_TEXT_COMMAND  5F
+DONELOOPING         13B4
+DOUBLE_BUFFERED_COMMAND  11
+DRAWING_MODE_COMMAND  5C
+DRAWOBJECTLOOP      130E
+DRAWOBJECTS         12EE
+DRAWSEGMENT         1756
+DRAW_LINE_CODE      54
+DRAW_PIXEL_TRAP_CODE  52
+DRAW_SQUARE_COMMAND  57
+D_X1_1              17A8
+D_X1_2              17E0
+D_X2_1              17AC
+D_X2_2              17E4
+D_Y1_1              17AA
+D_Y1_2              17E2
+D_Y2_1              17AE
+D_Y2_2              17E6
+EIGHTMASK           178E
+ENEMY1ACTIVE        1516
+ENEMY1LEFTX         14E6
+ENEMY1SPEED         14FE
+ENEMY1TOPY          14CE
+ENEMY2ACTIVE        151A
+ENEMY2LEFTX         14EA
+ENEMY2SPEED         1502
+ENEMY2TOPY          14D2
+ENEMY3ACTIVE        151E
+ENEMY3LEFTX         14EE
+ENEMY3SPEED         1506
+ENEMY3TOPY          14D6
+ENEMYIMAGE          2EF7E0
+ENEMY_CHUNK_HEIGHT  14
+ENEMY_CHUNK_START_X  0
+ENEMY_CHUNK_START_Y  0
+ENEMY_CHUNK_WIDTH   1E
+E_X1_1              17B0
+E_X1_2              17E8
+E_X2_1              17B4
+E_X2_2              17EC
+E_Y1_1              17B2
+E_Y1_2              17EA
+E_Y2_1              17B6
+E_Y2_2              17EE
+FIVEMASK            178B
+FOURMASK            178A
+F_X1_1              17B8
+F_X1_2              17F0
+F_X2_1              17BC
+F_X2_2              17F4
+F_Y1_1              17BA
+F_Y1_2              17F2
+F_Y2_1              17BE
+F_Y2_2              17F6
+GAMELOOP            101E
+GAMEOVER            11BC
+GAMESETUP           1000
+GETFILES            12EE
+GETRANDOMVAL        13A8
+GETUSERINPUT        106C
+GRAVITY             A
+GREEN               FF00
+G_X1_1              17C0
+G_X1_2              17F8
+G_X2_1              17C4
+G_X2_2              17FC
+G_Y1_1              17C2
+G_Y1_2              17FA
+G_Y2_1              17C6
+G_Y2_2              17FE
+HANDLECOINCOLLISION  15C8
+HANDLEENEMYCOLLISION  1622
+HANDLEJUMP          108E
+HEARTCROPX          5E73E4
+HEARTSIMAGE         2F0538
+HEART_CROP_HEIGHT   38
+HEART_CROP_WIDTH    49
+HEART_CROP_Y        11
+HEIGHTLOOP          1ADA
+HEIGHT_OFFSET       6E
+IMAGE_HEIGHT_OFFSET  16
+IMAGE_WIDTH_OFFSET  12
+INITPLAYAREA        1114
+INITPLAYERSTART     116E
+INITRANDOMSEED      11A8
+INITTITLESCREEN     1132
+INPUT_COMMAND       13
+JUMPFLAG            129A
+JUMP_KEY            20
+KEEPLOOPING         13AE
+LEFTXBOUNDSMATCH    1596
+LEFTXTABLE          14DA
+LEFT_X_PLAYER_BOUND  50
+LIVES_CHUNK_HEIGHT  38
+LIVES_CHUNK_START_X  0
+LIVES_CHUNK_START_Y  0
+LIVES_CHUNK_WIDTH   D8
+LIVES_DISPLAY_X     298
+LIVES_DISPLAY_Y     11
+LOOPMUSIC           16BC
+MAX_BOTTOM_Y        24E
+MAX_POINTS          1E
+MAX_SPEED           C
+NEXTSEGMENT         1748
+NINEMASK            178F
+NOJUMP              10B4
+NOSPEEDINCREASE     161C
+OBJACTIVETABLE      150A
+OBJSPEEDTABLE       14F2
+OBJ_HEIGHT          14
+OBJ_START_X         352
+OBJ_STOP_X          0
+OBJ_WIDTH           14
+ONEMASK             1787
+OUTPUT_FULL_HEIGHT  352
+OUTPUT_WIDTH        384
+OUT_BOUNDS_BOTTOM_Y  2A8
+OUT_BOUNDS_TOP_Y    78
+PEN_COLOR_TRAP_CODE  50
+PEN_WIDTH           4
+PEN_WIDTH_CODE      5D
+PIXEL_DATA_OFFSET   A
+PLAYERDEAD          1696
+PLAYERIMAGE         2ECC50
+PLAYERTOOFAR        165E
+PLAYERWON           169A
+PLAY_AREA_BOTTOM    2F8
+PLAY_AREA_LEFT      0
+PLAY_AREA_RIGHT     384
+PLAY_AREA_TOP       64
+PLAY_SINGLE_SOUND_COMMAND  49
+PL_CHUNK_HEIGHT     20
+PL_CHUNK_START_X    0
+PL_CHUNK_START_Y    0
+PL_CHUNK_WIDTH      3C
+PRINTBACKGROUND     192C
+PRINTINITLIVES      1990
+PRINTUPDATEDLIVES   19FA
+RANDOMVAL           152E
+RAWSCORE            16D0
+RED                 FF
+REPAINT_SCREEN_COMMAND  5E
+REPRINTOBJECT       1866
+REPRINTPLAYER       1800
+REPRINTSCOREBACKGROUND  18C2
+RESETFLAG           10B6
+RESETGAMESTATS      1234
+RESETOBJECT         1374
+RESETOBJECTSTATS    13C8
+RESET_KEY           46
+RESET_PLAYER_POS    12C
+RESET_PLAYER_VELOCITY  FFFFFFF9
+RIGHTXBOUNDSMATCH   158A
+RIGHT_X_PLAYER_BOUND  A0
+SEGMENTCOORDTABLE1  1790
+SEGMENTCOORDTABLE2  17C8
+SEGMENTMASKTABLE    1786
+SETSCREENPARAMETERS  10F6
+SET_FILL_COLOR_COMMAND  51
+SET_OUTPUT_RESOLUTION_COMMAND  21
+SET_PEN_COLOR_COMMAND  50
+SET_TEXT_COLOR_COMMAND  15
+SEVENMASK           178D
+SHIP_HEIGHT         14
+SHIP_START_VELOCITY  1E
+SHIP_START_Y_POSITION  12C
+SHIP_WIDTH          14
+SHIP_X_POSITION     64
+SIXMASK             178C
+SKIPCHECK           1562
+SKIPDRAW            1322
+SKIPRESET           1362
+SPEEDINTERVAL       1526
+SPEEDOFFSET         1522
+SPEEDTHRESHOLD      152A
+START               1000
+STRINGLOADING       12DE
+STRINGYOULOSE       129E
+STRINGYOUWIN        12BE
+SWITCHBUFFER        10EE
+THREEMASK           1789
+TITLEIMAGE          2FC270
+TOPYTABLE           14C2
+TWOMASK             1788
+UPDATEFIRSTDIGIT    16F8
+UPDATEOBJECTLOOP    1354
+UPDATEOBJECTS       1336
+UPDATESECONDDIGIT   1712
+UPDATESEVENSEGMENT  16D8
+UPPERYBOUNDSMATCH   15AA
+USERRESETGAME       1220
+VELOCITY_AFTER_JUMP  FFFFFFEC
+WAITFORSTARTLOOP    115A
+WHITE               FFFFFF
+WIDTHLOOP           1ABA
+YOUWIN              11EE
+ZEROMASK            1786
